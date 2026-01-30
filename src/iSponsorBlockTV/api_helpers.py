@@ -1,4 +1,5 @@
 import html
+from functools import wraps
 from hashlib import sha256
 
 from aiohttp import ClientSession
@@ -9,6 +10,7 @@ from .conditional_ttl_cache import AsyncConditionalTTL
 
 
 def list_to_tuple(function):
+    @wraps(function)
     def wrapper(*args):
         args = [tuple(x) if isinstance(x, list) else x for x in args]
         result = function(*args)
@@ -41,11 +43,7 @@ class ApiHelper:
         self.get_vid_id.cache_clear()
         self.is_whitelisted.cache_clear()
         self.search_channels.cache_clear()
-        # get_segments uses AsyncConditionalTTL which does not support cache_clear
-        # self.get_segments.cache_clear()
-        # TODO: Implement cache_clear in AsyncConditionalTTL to support invalidating get_segments cache.
-        # Until then, changes to skip_categories or minimum_skip_length will not affect
-        # already cached segments until the TTL expires.
+        self.get_segments.cache_clear()
 
     # Not used anymore, maybe it can stay here a little longer
     @AsyncLRU(maxsize=10)
