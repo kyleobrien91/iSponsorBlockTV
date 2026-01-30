@@ -41,7 +41,8 @@ class ApiHelper:
         self.get_vid_id.cache_clear()
         self.is_whitelisted.cache_clear()
         self.search_channels.cache_clear()
-        self.get_segments.cache_clear()
+        # get_segments uses AsyncConditionalTTL which does not support cache_clear
+        # self.get_segments.cache_clear()
 
     # Not used anymore, maybe it can stay here a little longer
     @AsyncLRU(maxsize=10)
