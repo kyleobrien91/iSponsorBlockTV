@@ -217,16 +217,19 @@ async def supervisor(
             else:
                 # Add
                 logging.info(f"Adding new device {screen_id}")
-                device_listener = DeviceListener(
-                    api_helper, config, device_config, debug, web_session
-                )
-                await device_listener.initialize_web_session()
+                try:
+                    device_listener = DeviceListener(
+                        api_helper, config, device_config, debug, web_session
+                    )
+                    await device_listener.initialize_web_session()
 
-                t1 = loop.create_task(device_listener.loop())
-                t2 = loop.create_task(device_listener.refresh_auth_loop())
+                    t1 = loop.create_task(device_listener.loop())
+                    t2 = loop.create_task(device_listener.refresh_auth_loop())
 
-                devices_map[screen_id] = device_listener
-                tasks_map[screen_id] = [t1, t2]
+                    devices_map[screen_id] = device_listener
+                    tasks_map[screen_id] = [t1, t2]
+                except Exception as e:
+                    logging.error(f"Failed to initialize device {screen_id}: {e}")
 
         # Remove
         for screen_id in list(devices_map.keys()):
