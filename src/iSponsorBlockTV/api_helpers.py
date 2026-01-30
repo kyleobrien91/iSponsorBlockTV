@@ -37,6 +37,11 @@ class ApiHelper:
         self.skip_count_tracking = config.skip_count_tracking
         self.num_devices = len(config.devices)
         self.minimum_skip_length = config.minimum_skip_length
+        # Clear caches
+        self.get_vid_id.cache_clear()
+        self.is_whitelisted.cache_clear()
+        self.search_channels.cache_clear()
+        self.get_segments.cache_clear()
 
     # Not used anymore, maybe it can stay here a little longer
     @AsyncLRU(maxsize=10)
