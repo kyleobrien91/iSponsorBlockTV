@@ -43,6 +43,9 @@ class ApiHelper:
         self.search_channels.cache_clear()
         # get_segments uses AsyncConditionalTTL which does not support cache_clear
         # self.get_segments.cache_clear()
+        # TODO: Implement cache_clear in AsyncConditionalTTL to support invalidating get_segments cache.
+        # Until then, changes to skip_categories or minimum_skip_length will not affect
+        # already cached segments until the TTL expires.
 
     # Not used anymore, maybe it can stay here a little longer
     @AsyncLRU(maxsize=10)
