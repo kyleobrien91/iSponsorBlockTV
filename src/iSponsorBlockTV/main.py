@@ -303,7 +303,7 @@ async def main_async(config, debug, http_tracing):
     signal(SIGINT, handle_signal)
 
     try:
-        # Wait indefinitely (or until cancelled)
+        # Wait indefinitely (or until cancelled by signal)
         await asyncio.Event().wait()
     except KeyboardInterrupt:
         print("Cancelling tasks and exiting...")
