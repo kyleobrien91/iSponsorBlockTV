@@ -112,6 +112,19 @@ class Config:
         """Reloads the configuration from file."""
         print("Reloading config file...")
         try:
+            # Re-initialize defaults before loading from file to ensure removed keys are reset
+            self.devices = []
+            self.apikey = ""
+            self.skip_categories = []
+            self.channel_whitelist = []
+            self.skip_count_tracking = True
+            self.mute_ads = False
+            self.skip_ads = False
+            self.minimum_skip_length = 1
+            self.auto_play = True
+            self.join_name = "iSponsorBlockTV"
+            self.use_proxy = False
+
             self.load_from_file()
             self.validate()
             return True
