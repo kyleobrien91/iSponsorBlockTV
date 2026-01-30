@@ -42,6 +42,12 @@ class YtLoungeApi(pyytlounge.YtLoungeApi):
             self.auto_play = config.auto_play
         self._command_mutex = asyncio.Lock()
 
+    def update_config(self, config):
+        """Updates the configuration of the YtLoungeApi"""
+        self.mute_ads = config.mute_ads
+        self.skip_ads = config.skip_ads
+        self.auto_play = config.auto_play
+
     # Ensures that we still are subscribed to the lounge
     async def _watchdog(self):
         """

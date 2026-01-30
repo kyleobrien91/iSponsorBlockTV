@@ -29,6 +29,24 @@ class ApiHelper:
         self.num_devices = len(config.devices)
         self.minimum_skip_length = config.minimum_skip_length
 
+    def update_config(self, config):
+        """Updates the configuration of the ApiHelper"""
+        self.apikey = config.apikey
+        self.skip_categories = config.skip_categories
+        self.channel_whitelist = config.channel_whitelist
+        self.skip_count_tracking = config.skip_count_tracking
+        self.num_devices = len(config.devices)
+        self.minimum_skip_length = config.minimum_skip_length
+        # Clear caches
+        self.get_vid_id.cache_clear()
+        self.is_whitelisted.cache_clear()
+        self.search_channels.cache_clear()
+        # get_segments uses AsyncConditionalTTL which does not support cache_clear
+        # self.get_segments.cache_clear()
+        # TODO: Implement cache_clear in AsyncConditionalTTL to support invalidating get_segments cache.
+        # Until then, changes to skip_categories or minimum_skip_length will not affect
+        # already cached segments until the TTL expires.
+
     # Not used anymore, maybe it can stay here a little longer
     @AsyncLRU(maxsize=10)
     async def get_vid_id(self, title, artist, api_key, web_session):
