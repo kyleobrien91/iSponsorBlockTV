@@ -80,6 +80,10 @@ class AsyncConditionalTTL:
 
             return val
 
+        def cache_clear():
+            self.ttl.clear()
+
+        wrapper.cache_clear = cache_clear
         wrapper.__name__ += func.__name__
 
         return wrapper
