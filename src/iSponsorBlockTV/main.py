@@ -211,7 +211,10 @@ async def supervisor(
             current_screen_ids.add(screen_id)
 
             if screen_id in devices_map:
-                # Update
+                # Update if configuration changed
+                # We can't easily check for equality between DeviceListener and Device,
+                # but we are calling update_config anyway which is lightweight.
+                # If we wanted to be stricter, we could store the last Device config in devices_map.
                 logging.info(f"Updating device {screen_id}")
                 devices_map[screen_id].update_config(config, device_config)
             else:
