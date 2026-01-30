@@ -183,6 +183,14 @@ class ConfigHandler(FileSystemEventHandler):
         if os.path.basename(event.src_path) == "config.json":
             self.callback()
 
+    def on_moved(self, event):
+        if os.path.basename(event.dest_path) == "config.json":
+            self.callback()
+
+    def on_created(self, event):
+        if os.path.basename(event.src_path) == "config.json":
+            self.callback()
+
 
 async def supervisor(
     config, api_helper, devices_map, tasks_map, change_event, debug, web_session
@@ -310,12 +318,17 @@ async def main_async(config, debug, http_tracing):
     signal(SIGINT, handle_signal)
 
     try:
-        # Wait indefinitely (or until cancelled by signal)
-        await asyncio.Event().wait()
+        # Wait indefinitely (or until cancelled by signal), or until supervisor fails
+        await asyncio.gather(asyncio.Event().wait(), supervisor_task)
     except KeyboardInterrupt:
         print("Cancelling tasks and exiting...")
         supervisor_task.cancel()
         await finish(devices_map, tasks_map, web_session, tcp_connector, observer)
+    except Exception as e:
+        print(f"Unexpected error: {e}")
+        supervisor_task.cancel()
+        await finish(devices_map, tasks_map, web_session, tcp_connector, observer)
+        raise
     finally:
         # Ensure cleanup if not done
         if not web_session.closed:
