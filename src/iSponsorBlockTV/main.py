@@ -232,14 +232,18 @@ async def supervisor(
                     logging.error(f"Failed to initialize device {screen_id}: {e}")
 
         # Remove
-        for screen_id in list(devices_map.keys()):
-            if screen_id not in current_screen_ids:
-                logging.info(f"Removing device {screen_id}")
-                await devices_map[screen_id].cancel()
-                for task in tasks_map[screen_id]:
-                    task.cancel()
-                del devices_map[screen_id]
-                del tasks_map[screen_id]
+        screen_ids_to_remove = [
+            sid for sid in devices_map if sid not in current_screen_ids
+        ]
+        cancellation_coroutines = []
+        for screen_id in screen_ids_to_remove:
+            logging.info(f"Removing device {screen_id}")
+            cancellation_coroutines.append(devices_map.pop(screen_id).cancel())
+            for task in tasks_map.pop(screen_id):
+                task.cancel()
+
+        if cancellation_coroutines:
+            await asyncio.gather(*cancellation_coroutines, return_exceptions=True)
 
 
 async def main_async(config, debug, http_tracing):
