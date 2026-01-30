@@ -28,6 +28,11 @@ class Device:
         if not self.screen_id:
             raise ValueError("No screen id found")
 
+    def __eq__(self, other):
+        if isinstance(other, Device):
+            return self.__dict__ == other.__dict__
+        return False
+
 
 class Config:
     def __init__(self, data_dir):
@@ -45,7 +50,7 @@ class Config:
         self.auto_play = True
         self.join_name = "iSponsorBlockTV"
         self.use_proxy = False
-        self.__load()
+        self.load_from_file()
 
     def validate(self):
         if hasattr(self, "atvs"):
@@ -59,12 +64,12 @@ class Config:
             )
             print("Exiting in 10 seconds...")
             time.sleep(10)
-            sys.exit()
+            raise ValueError("The atvs config option is deprecated")
         if not self.devices:
             print("No devices found, please add at least one device")
             print("Exiting in 10 seconds...")
             time.sleep(10)
-            sys.exit()
+            raise ValueError("No devices found")
         self.devices = [Device(i) for i in self.devices]
         if not self.apikey and self.channel_whitelist:
             raise ValueError("No youtube API key found and channel whitelist is not empty")
@@ -72,7 +77,7 @@ class Config:
             self.skip_categories = ["sponsor"]
             print("No categories found, using default: sponsor")
 
-    def __load(self):
+    def load_from_file(self):
         try:
             with open(self.config_file, "r", encoding="utf-8") as f:
                 config = json.load(f)
@@ -102,6 +107,20 @@ class Config:
                     sys.exit()
             else:
                 print("Blank config file created")
+
+    def reload(self):
+        """Reloads the configuration from file."""
+        print("Reloading config file...")
+        try:
+            self.load_from_file()
+            self.validate()
+            return True
+        except ValueError as e:
+            print(f"Error reloading config: {e}")
+            return False
+        except Exception as e:
+            print(f"Unexpected error reloading config: {e}")
+            return False
 
     def save(self):
         with open(self.config_file, "w", encoding="utf-8") as f:
@@ -191,7 +210,10 @@ def setup_cli_command(ctx):
 def start(ctx):
     """Start the main program"""
     config = Config(ctx.obj["data_dir"])
-    config.validate()
+    try:
+        config.validate()
+    except ValueError:
+        sys.exit()
     main.main(config, ctx.obj["debug"], ctx.obj["http_tracing"])
 
 

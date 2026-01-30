@@ -29,6 +29,15 @@ class ApiHelper:
         self.num_devices = len(config.devices)
         self.minimum_skip_length = config.minimum_skip_length
 
+    def update_config(self, config):
+        """Updates the configuration of the ApiHelper"""
+        self.apikey = config.apikey
+        self.skip_categories = config.skip_categories
+        self.channel_whitelist = config.channel_whitelist
+        self.skip_count_tracking = config.skip_count_tracking
+        self.num_devices = len(config.devices)
+        self.minimum_skip_length = config.minimum_skip_length
+
     # Not used anymore, maybe it can stay here a little longer
     @AsyncLRU(maxsize=10)
     async def get_vid_id(self, title, artist, api_key, web_session):

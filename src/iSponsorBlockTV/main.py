@@ -1,10 +1,13 @@
 import asyncio
 import logging
 import time
+import os
 from signal import SIGINT, SIGTERM, signal
 from typing import Optional
 
 import aiohttp
+from watchdog.events import FileSystemEventHandler
+from watchdog.observers import Observer
 
 from . import api_helpers, ytlounge
 from .debug_helpers import AiohttpTracer
@@ -22,6 +25,11 @@ class DeviceListener:
         self.lounge_controller = ytlounge.YtLoungeApi(
             device.screen_id, config, api_helper, self.logger
         )
+
+    def update_config(self, config, device):
+        self.offset = device.offset
+        self.name = device.name
+        self.lounge_controller.update_config(config)
 
     # Ensures that we have a valid auth token
     async def refresh_auth_loop(self):
@@ -144,8 +152,21 @@ class DeviceListener:
         await self.lounge_controller.change_web_session(self.web_session)
 
 
-async def finish(devices, web_session, tcp_connector):
-    await asyncio.gather(*(device.cancel() for device in devices), return_exceptions=True)
+async def finish(devices_map, tasks_map, web_session, tcp_connector, observer):
+    if observer:
+        observer.stop()
+        observer.join()
+
+    cancellation_tasks = []
+    for device in devices_map.values():
+        cancellation_tasks.append(device.cancel())
+
+    for tasks in tasks_map.values():
+        for task in tasks:
+            task.cancel()
+            cancellation_tasks.append(task)
+
+    await asyncio.gather(*cancellation_tasks, return_exceptions=True)
     await web_session.close()
     await tcp_connector.close()
 
@@ -154,10 +175,75 @@ def handle_signal(signum, frame):
     raise KeyboardInterrupt()
 
 
+class ConfigHandler(FileSystemEventHandler):
+    def __init__(self, callback):
+        self.callback = callback
+
+    def on_modified(self, event):
+        if os.path.basename(event.src_path) == "config.json":
+            self.callback()
+
+
+async def supervisor(
+    config, api_helper, devices_map, tasks_map, change_event, debug, web_session
+):
+    loop = asyncio.get_running_loop()
+    while True:
+        await change_event.wait()
+        change_event.clear()
+
+        # Debounce: wait a bit to see if more events come in
+        await asyncio.sleep(0.5)
+        # Clear any events that happened during the sleep
+        change_event.clear()
+
+        if not config.reload():
+            continue
+
+        logging.info("Configuration changed, reloading...")
+        api_helper.update_config(config)
+
+        current_screen_ids = set()
+
+        # Update or Add
+        for device_config in config.devices:
+            screen_id = device_config.screen_id
+            current_screen_ids.add(screen_id)
+
+            if screen_id in devices_map:
+                # Update
+                logging.info(f"Updating device {screen_id}")
+                devices_map[screen_id].update_config(config, device_config)
+            else:
+                # Add
+                logging.info(f"Adding new device {screen_id}")
+                device_listener = DeviceListener(
+                    api_helper, config, device_config, debug, web_session
+                )
+                await device_listener.initialize_web_session()
+
+                t1 = loop.create_task(device_listener.loop())
+                t2 = loop.create_task(device_listener.refresh_auth_loop())
+
+                devices_map[screen_id] = device_listener
+                tasks_map[screen_id] = [t1, t2]
+
+        # Remove
+        for screen_id in list(devices_map.keys()):
+            if screen_id not in current_screen_ids:
+                logging.info(f"Removing device {screen_id}")
+                await devices_map[screen_id].cancel()
+                for task in tasks_map[screen_id]:
+                    task.cancel()
+                del devices_map[screen_id]
+                del tasks_map[screen_id]
+
+
 async def main_async(config, debug, http_tracing):
     loop = asyncio.get_event_loop_policy().get_event_loop()
-    tasks = []  # Save the tasks so the interpreter doesn't garbage collect them
-    devices = []  # Save the devices to close them later
+    devices_map = {}  # screen_id -> DeviceListener
+    tasks_map = {}  # screen_id -> [tasks]
+
     if debug:
         loop.set_debug(True)
 
@@ -173,31 +259,62 @@ async def main_async(config, debug, http_tracing):
         trace_config.on_request_end.append(tracer.on_request_end)
         trace_config.on_request_exception.append(tracer.on_request_exception)
         web_session = aiohttp.ClientSession(
-            trust_env=config.use_proxy, connector=tcp_connector, trace_configs=[trace_config]
+            trust_env=config.use_proxy,
+            connector=tcp_connector,
+            trace_configs=[trace_config],
         )
     else:
-        web_session = aiohttp.ClientSession(trust_env=config.use_proxy, connector=tcp_connector)
+        web_session = aiohttp.ClientSession(
+            trust_env=config.use_proxy, connector=tcp_connector
+        )
 
     api_helper = api_helpers.ApiHelper(config, web_session)
+
     for i in config.devices:
         device = DeviceListener(api_helper, config, i, debug, web_session)
-        devices.append(device)
+        devices_map[i.screen_id] = device
         await device.initialize_web_session()
-        tasks.append(loop.create_task(device.loop()))
-        tasks.append(loop.create_task(device.refresh_auth_loop()))
+        t1 = loop.create_task(device.loop())
+        t2 = loop.create_task(device.refresh_auth_loop())
+        tasks_map[i.screen_id] = [t1, t2]
+
+    # Setup Watchdog
+    change_event = asyncio.Event()
+
+    def on_change():
+        loop.call_soon_threadsafe(change_event.set)
+
+    event_handler = ConfigHandler(on_change)
+    observer = Observer()
+    config_dir = os.path.dirname(config.config_file) or "."
+    observer.schedule(event_handler, path=config_dir, recursive=False)
+    observer.start()
+
+    supervisor_task = loop.create_task(
+        supervisor(
+            config, api_helper, devices_map, tasks_map, change_event, debug, web_session
+        )
+    )
+
     signal(SIGTERM, handle_signal)
     signal(SIGINT, handle_signal)
+
     try:
-        await asyncio.gather(*tasks)
+        # Wait indefinitely (or until cancelled)
+        await asyncio.Event().wait()
     except KeyboardInterrupt:
         print("Cancelling tasks and exiting...")
-        await finish(devices, web_session, tcp_connector)
-        for task in tasks:
-            task.cancel()
-        await asyncio.gather(*tasks, return_exceptions=True)
+        supervisor_task.cancel()
+        await finish(devices_map, tasks_map, web_session, tcp_connector, observer)
     finally:
-        await web_session.close()
-        await tcp_connector.close()
+        # Ensure cleanup if not done
+        if not web_session.closed:
+            await web_session.close()
+        if not tcp_connector.closed:
+            await tcp_connector.close()
+        if observer.is_alive():
+            observer.stop()
+            observer.join()
         print("Exited")
 
 
